@@ -14,17 +14,17 @@ header{padding:22px 16px 8px;max-width:1100px;margin:auto}h1{margin:0;font-size:
 .k small{display:block;color:var(--mut);font:12px system-ui,sans-serif}.k b{font-size:1.45rem;font-variant-numeric:tabular-nums}.k i{font:12px system-ui,sans-serif;color:var(--mut);font-style:normal}
 .neg{color:var(--bad)}.pos{color:var(--ok)}h2{font-size:1rem;margin:0 0 8px}.cv{position:relative;height:260px}
 table{width:100%;border-collapse:collapse;font:14px system-ui,sans-serif}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}td:last-child,th:last-child{text-align:right}
-input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}button{background:var(--blue);color:var(--bg);cursor:pointer}
+input,button,select{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}button{background:var(--blue);color:var(--bg);cursor:pointer}
 .wide{grid-column:1/-1}.alerta{border-left:4px solid var(--bad)}
 </style></head><body>
-<header><h1>Painel Financeiro da Loja</h1><div class="sub" id="sub"></div></header>
+<header><h1>Painel Financeiro da Loja</h1><div class="sub" id="sub"></div><div style="margin-top:10px"><label class="sub">Período: <select id="sel"></select></label></div></header>
 <main>
 <div class="grid" id="kpis"></div>
 <div class="alerta card" id="alerta" style="margin-top:12px"></div>
 <div class="grid charts">
 <div class="card wide"><h2>Entradas × Saídas e saldo acumulado</h2><div class="cv"><canvas id="c1"></canvas></div></div>
 <div class="card"><h2>Mensalidades: arrecadado × potencial</h2><div class="cv"><canvas id="c2"></canvas></div></div>
-<div class="card"><h2>Para onde vai o dinheiro (acumulado)</h2><div class="cv"><canvas id="c3"></canvas></div></div>
+<div class="card"><h2 id="t3">Para onde vai o dinheiro</h2><div class="cv"><canvas id="c3"></canvas></div></div>
 <div class="card"><h2>Inadimplência por grau</h2><div class="cv"><canvas id="c4"></canvas></div></div>
 <div class="card"><h2>Projeção de saldo até Mai</h2><div class="cv"><canvas id="c5"></canvas></div><div class="sub" id="projnote"></div></div>
 <div class="card"><h2>Iniciação e elevação</h2><table id="rec"></table></div>
@@ -35,29 +35,38 @@ input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid va
 const R=v=>(v<0?'-':'')+'R$ '+Math.abs(v).toLocaleString('pt-BR',{maximumFractionDigits:0}),$=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 fetch('data.json').then(r=>r.json()).then(d=>{
-const n=d.idx_ref,M=d.meses.slice(0,n),f=d.fluxo,m=d.mensalidades,s=(a)=>a.slice(0,n).reduce((x,y)=>x+y,0);
-const ent=s(f.total_entradas),sai=s(f.total_saidas),res=ent-sai,saldo=f.saldo_final[n-1],medio=res/n;
-const arr=s(m.arrecadado),pot=m.potencial*n,taxa=arr/pot,inad=m.inadimplentes/m.cadastrados;
-$('sub').textContent=`Exercício ${d.ano} · dados até ${d.mes_ref} · atualizado em ${d.atualizado}`;
-const K=(t,v,c,i)=>`<div class="card k"><small>${t}</small><b class="${c||''}">${v}</b><i>${i||''}</i></div>`;
-$('kpis').innerHTML=K('Saldo em caixa',R(saldo),saldo<0?'neg':'pos','acumulado')+K('Resultado do período',R(res),res<0?'neg':'pos',`média ${R(medio)}/mês`)+
-K('Arrecadação de mensalidades',(taxa*100).toFixed(0)+'%',taxa<.8?'neg':'pos',`${R(arr)} de ${R(pot)}`)+K('Inadimplência',(inad*100).toFixed(1)+'%',inad>.15?'neg':'pos',`${m.inadimplentes} de ${m.cadastrados} irmãos`)+
-K('Valor em atraso',R(m.valor_devido),'neg',`${m.meses_atraso} mensalidades`)+K('Despesas maçônicas',((s(Object.values(f.saidas).filter((_,i)=>Object.keys(f.saidas)[i]=='Despesas Maçonicas')[0]||[])/sai)*100).toFixed(0)+'%','','das saídas');
-$('alerta').innerHTML=`<b>Leitura rápida:</b> o caixa fechou ${M.length} meses com resultado ${res<0?'negativo':'positivo'} de ${R(res)}. Se os ${m.inadimplentes} irmãos em atraso quitassem ${R(m.valor_devido)}, o saldo iria para ${R(saldo+m.valor_devido)}.`;
+const n=d.idx_ref,M=d.meses.slice(0,n),f=d.fluxo,m=d.mensalidades,tot=a=>a.slice(0,n).reduce((x,y)=>x+y,0);
+$('sel').innerHTML='<option value="-1">Total (Jun a '+d.mes_ref+')</option>'+M.map((x,i)=>`<option value="${i}">${x}</option>`).join('');
 const ink=css('--ink'),mut=css('--mut'),gold=css('--gold'),ok=css('--ok'),bad=css('--bad'),blue=css('--blue'),line=css('--line');
 Chart.defaults.color=mut;Chart.defaults.borderColor=line;Chart.defaults.maintainAspectRatio=false;
 const mk=(id,cfg)=>new Chart($(id),cfg),fm={callback:v=>R(v)},tip={callbacks:{label:c=>' '+c.dataset.label+': '+R(c.parsed.y??c.parsed)}};
+const medio=(tot(f.total_entradas)-tot(f.total_saidas))/n;
 mk('c1',{data:{labels:M,datasets:[{type:'bar',label:'Entradas',data:f.total_entradas.slice(0,n),backgroundColor:ok},{type:'bar',label:'Saídas',data:f.total_saidas.slice(0,n),backgroundColor:bad},{type:'line',label:'Saldo',data:f.saldo_final.slice(0,n),borderColor:gold,backgroundColor:gold,tension:.3}]},options:{scales:{y:{ticks:fm}},plugins:{tooltip:tip}}});
 mk('c2',{type:'bar',data:{labels:M,datasets:[{label:'Arrecadado',data:m.arrecadado.slice(0,n),backgroundColor:blue},{label:'Potencial',data:M.map(_=>m.potencial),backgroundColor:line}]},options:{scales:{y:{ticks:fm}},plugins:{tooltip:tip}}});
-const sa=Object.entries(f.saidas).map(([k,v])=>[k,s(v)]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
-mk('c3',{type:'doughnut',data:{labels:sa.map(x=>x[0]),datasets:[{data:sa.map(x=>x[1]),backgroundColor:[blue,gold,bad,ok,'#8a8fa3','#c9b27c','#5f7aa8']}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>' '+c.label+': '+R(c.parsed)}}}}});
 const g=Object.entries(m.por_grau);
 mk('c4',{type:'bar',data:{labels:g.map(x=>x[0]),datasets:[{label:'Irmãos',data:g.map(x=>x[1].total),backgroundColor:line},{label:'Inadimplentes',data:g.map(x=>x[1].inadimplentes),backgroundColor:bad}]}});
 const ult=f.saldo_final[n-1],pr=d.meses.map((_,i)=>i<n?f.saldo_final[i]:ult+medio*(i-n+1));
 mk('c5',{type:'line',data:{labels:d.meses,datasets:[{label:'Realizado',data:pr.map((v,i)=>i<n?v:null),borderColor:gold,backgroundColor:gold},{label:'Projeção (mantido o ritmo)',data:pr.map((v,i)=>i>=n-1?v:null),borderColor:bad,borderDash:[6,4],pointRadius:0}]},options:{scales:{y:{ticks:fm}},plugins:{tooltip:tip}}});
 $('projnote').textContent=`Se o déficit médio de ${R(medio)}/mês continuar, o saldo chega a ${R(pr[11])} em Mai.`;
-$('rec').innerHTML='<tr><th>Tipo</th><th>Pago</th><th>Pendente</th></tr>'+Object.entries(d.receitas_especiais).map(([k,v])=>`<tr><td>${k}</td><td>${R(v.pago)}</td><td class="neg">${R(v.pendente)}</td></tr>`).join('');
-$('dm').innerHTML=Object.entries(d.despesas_macom).map(([k,v])=>`<tr><td>${k}</td><td>${R(s(v))}</td></tr>`).join('');
+let c3;
+function render(sel){
+const ix=sel<0?M.map((_,i)=>i):[sel],S=a=>ix.reduce((x,i)=>x+a[i],0),tag=sel<0?'no período':'em '+M[sel];
+$('sub').textContent=`Exercício ${d.ano} · dados até ${d.mes_ref} · atualizado em ${d.atualizado}`;
+const ent=S(f.total_entradas),sai=S(f.total_saidas),res=ent-sai,saldo=f.saldo_final[ix[ix.length-1]],arr=S(m.arrecadado),pot=m.potencial*ix.length,taxa=arr/pot;
+const im=sel<0?{qtd:m.inadimplentes,valor:m.valor_devido}:m.inad_por_mes[sel],inad=im.qtd/m.cadastrados,dm=S(f.saidas['Despesas Maçonicas']||f.total_saidas.map(_=>0));
+const K=(t,v,c,i)=>`<div class="card k"><small>${t}</small><b class="${c||''}">${v}</b><i>${i||''}</i></div>`;
+$('kpis').innerHTML=K(sel<0?'Saldo em caixa':'Saldo ao fim de '+M[sel],R(saldo),saldo<0?'neg':'pos','acumulado')+K('Resultado '+tag,R(res),res<0?'neg':'pos',sel<0?`média ${R(res/ix.length)}/mês`:`entradas ${R(ent)} · saídas ${R(sai)}`)+
+K('Arrecadação de mensalidades',(taxa*100).toFixed(0)+'%',taxa<.8?'neg':'pos',`${R(arr)} de ${R(pot)}`)+K('Inadimplência',(inad*100).toFixed(1)+'%',inad>.15?'neg':'pos',`${im.qtd} de ${m.cadastrados} irmãos`)+
+K('Valor em atraso',R(im.valor),'neg',sel<0?`${m.meses_atraso} mensalidades`:'mensalidades não pagas no mês')+K('Despesas maçônicas',(sai?dm/sai*100:0).toFixed(0)+'%','','das saídas '+tag);
+$('alerta').innerHTML=sel<0?`<b>Leitura rápida:</b> o caixa fechou ${M.length} meses com resultado ${res<0?'negativo':'positivo'} de ${R(res)}. Se os ${m.inadimplentes} irmãos em atraso quitassem ${R(m.valor_devido)}, o saldo iria para ${R(saldo+m.valor_devido)}.`:`<b>${M[sel]}:</b> entradas de ${R(ent)}, saídas de ${R(sai)} e resultado ${res<0?'negativo':'positivo'} de ${R(res)}. A inadimplência no mês foi de ${im.qtd} irmãos (${R(im.valor)}).`;
+const sa=Object.entries(f.saidas).map(([k,v])=>[k,S(v)]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+if(c3)c3.destroy();
+c3=mk('c3',{type:'doughnut',data:{labels:sa.map(x=>x[0]),datasets:[{data:sa.map(x=>x[1]),backgroundColor:[blue,gold,bad,ok,'#8a8fa3','#c9b27c','#5f7aa8']}]},options:{plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>' '+c.label+': '+R(c.parsed)}}}}});
+$('t3').textContent='Para onde vai o dinheiro ('+(sel<0?'acumulado':M[sel])+')';
+$('rec').innerHTML='<tr><th>Tipo</th><th>Pago</th><th>Pendente</th></tr>'+Object.entries(d.receitas_especiais).map(([k,v])=>`<tr><td>${k}</td><td>${R(v.pago)}</td><td class="neg">${R(v.pendente)}</td></tr>`).join('')+'<tr><td colspan="3" class="sub">Posição acumulada (não varia por mês)</td></tr>';
+$('dm').innerHTML=Object.entries(d.despesas_macom).map(([k,v])=>[k,S(v)]).filter(x=>x[1]>0).map(([k,v])=>`<tr><td>${k}</td><td>${R(v)}</td></tr>`).join('');
+}
+$('sel').onchange=e=>render(+e.target.value);render(-1);
 });
 $('go').onclick=async()=>{try{
 const e=await (await fetch('devedores.enc.json')).json(),b=x=>Uint8Array.from(atob(x),c=>c.charCodeAt(0)),t=new TextEncoder();
